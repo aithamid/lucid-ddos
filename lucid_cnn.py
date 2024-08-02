@@ -52,7 +52,7 @@ config.gpu_options.allow_growth = True  # dynamically grow the memory used on th
 OUTPUT_FOLDER = "./output/"
 
 VAL_HEADER = ['Model', 'Samples', 'Accuracy', 'F1Score', 'Hyper-parameters','Validation Set']
-PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
+PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source', 'Attackers']
 
 # hyperparameters
 PATIENCE = 10
@@ -288,7 +288,7 @@ def main(argv):
         mins, maxs = static_min_max(time_window)
 
         while (True):
-            samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
+            samples, source_ips = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
             if len(samples) > 0:
                 X,Y_true,keys = dataset_to_list_of_fragments(samples)
                 X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
@@ -304,16 +304,23 @@ def main(argv):
                 prediction_time = pt1 - pt0
 
                 [packets] = count_packets_in_dataset([X])
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer)
+
+                # Filter attacker IPs based on prediction results
+                malicious_ips = set()
+                for i, pred in enumerate(Y_pred):
+                    if pred > 0.5:  # If the prediction is positive for DDoS
+                        malicious_ips.add(keys[i][0])  # Add source IP of the malicious flow
+
+                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time, predict_writer, list(malicious_ips))
                 predict_file.flush()
 
             elif isinstance(cap, pyshark.FileCapture) == True:
-                print("\nNo more packets in file ", data_source)
+                print("\\nNo more packets in file ", data_source)
                 break
 
         predict_file.close()
 
-def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer):
+def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer, attacker_ips):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
 
     if Y_true is not None and len(Y_true.shape) > 0:  # if we have the labels, we can compute the classification accuracy
@@ -329,13 +336,15 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
 
         row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
                'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': '{:05.4f}'.format(accuracy), 'F1Score': '{:05.4f}'.format(f1),
-               'TPR': '{:05.4f}'.format(tpr), 'FPR': '{:05.4f}'.format(fpr), 'TNR': '{:05.4f}'.format(tnr), 'FNR': '{:05.4f}'.format(fnr), 'Source': data_source}
+               'TPR': '{:05.4f}'.format(tpr), 'FPR': '{:05.4f}'.format(fpr), 'TNR': '{:05.4f}'.format(tnr), 'FNR': '{:05.4f}'.format(fnr),
+               'Source': data_source, 'Attackers': ', '.join(attacker_ips)}
     else:
         row = {'Model': model_name, 'Time': '{:04.3f}'.format(prediction_time), 'Packets': packets,
                'Samples': Y_pred.shape[0], 'DDOS%': ddos_rate, 'Accuracy': "N/A", 'F1Score': "N/A",
-               'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source}
+               'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source, 'Attackers': ', '.join(attacker_ips)}
     pprint.pprint(row, sort_dicts=False)
     writer.writerow(row)
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])

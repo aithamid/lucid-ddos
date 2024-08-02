@@ -186,10 +186,11 @@ def process_pcap(pcap_file,dataset_type,in_labels,max_flow_len,labelled_flows,ma
     print('Completed file {} in {} seconds.'.format(pcap_name, time.time() - start_time))
 
 # Transforms live traffic into input samples for inference
-def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_type='all',time_window=TIME_WINDOW):
+def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_type='all', time_window=TIME_WINDOW):
     start_time = time.time()
     temp_dict = OrderedDict()
     labelled_flows = []
+    source_ips = set()
 
     start_time_window = start_time
     time_window = start_time_window + time_window
@@ -199,18 +200,23 @@ def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_typ
             if time.time() >= time_window:
                 break
             pf = parse_packet(pkt)
+            if pf:
+                source_ips.add(pf.id_fwd[0])
             temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
     elif isinstance(cap, pyshark.FileCapture) == True:
         while time.time() < time_window:
             try:
                 pkt = cap.next()
                 pf = parse_packet(pkt)
-                temp_dict = store_packet(pf,temp_dict,start_time_window,max_flow_len)
+                if pf:
+                    source_ips.add(pf.id_fwd[0])
+                temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
             except:
                 break
 
-    apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
-    return labelled_flows
+    apply_labels(temp_dict, labelled_flows, in_labels, traffic_type)
+    return labelled_flows, list(source_ips)
+
 
 def store_packet(pf,temp_dict,start_time_window, max_flow_len):
     if pf is not None:
