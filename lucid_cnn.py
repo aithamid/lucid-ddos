@@ -320,6 +320,15 @@ def main(argv):
 
         predict_file.close()
 
+
+def write_attacker_ips_to_file(attacker_ips, file_path='attacker_ips.txt'):
+    with open(file_path, 'w') as f:
+        for ip in attacker_ips:
+            if not ip.startswith('10.53.1.'):
+                f.write(f"{ip}\n")
+                
+
+
 def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_time, writer, attacker_ips):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
 
@@ -344,6 +353,8 @@ def report_results(Y_true, Y_pred, packets, model_name, data_source, prediction_
                'TPR': "N/A", 'FPR': "N/A", 'TNR': "N/A", 'FNR': "N/A", 'Source': data_source, 'Attackers': ', '.join(attacker_ips)}
     pprint.pprint(row, sort_dicts=False)
     writer.writerow(row)
+
+    write_attacker_ips_to_file(attacker_ips)
 
 
 if __name__ == "__main__":
